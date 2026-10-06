@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+
+- Discover and persist the native catalog before initial model selection, including first-ever CLI startup without a cache.
+- Prevent a fresh automatic local default from silently falling back to an authenticated cloud provider when Strata is unavailable.
+- Preserve explicit CLI selections, resumed conversations and unrelated cloud defaults.
+- Respect offline mode and scoped local CLI runtime keys without forwarding another provider's key to Strata.
+- Expand validation to 43 offline tests and 14 real-service groups; CLI assertions verify the actual response provider and physical model.
+
 ## 0.1.0
 
 - Add native Strata provider discovery and persistent Pi model catalogs.

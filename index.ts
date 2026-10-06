@@ -4,10 +4,13 @@ import { createStrataProvider } from "./src/provider.ts";
 import { saveConnection, saveRecommendedSetup } from "./src/storage.ts";
 import { AUTO_MODEL_ID, chooseModel, compactionPreset } from "./src/tuning.ts";
 import { explainStrataError } from "./src/errors.ts";
+import { bootstrapCatalog } from "./src/bootstrap.ts";
 
-export default async function (pi: ExtensionAPI) {
+export async function registerStrataExtension(pi: ExtensionAPI, bootstrap = bootstrapCatalog) {
   const config = await loadConfig();
   const { provider, status } = createStrataProvider(config);
+  try { await bootstrap(provider, config); }
+  catch { status.lastError = "Could not initialize the Strata catalog. Check the local configuration and model cache."; }
   pi.registerProvider(provider);
   pi.registerVirtualModel({
     provider: config.provider,
@@ -101,8 +104,20 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async (_event, ctx) => {
+    const settings = pi.getSettings();
+    const explicitSelection = process.argv.some(value => ["--model", "--models", "--provider"].includes(value) || /^(--model|--models|--provider)=/.test(value));
+    const hasConversation = ctx.sessionManager.getBranch().some(entry => entry.type === "message" && entry.message.role !== "system");
+    if (!explicitSelection && !hasConversation && settings.defaultProvider === config.provider && settings.defaultModel === AUTO_MODEL_ID && (ctx.model?.id !== AUTO_MODEL_ID || ctx.model?.provider !== config.provider)) {
+      await ctx.modelRegistry.refresh({ providers: [config.provider], allowNetwork: false });
+      const automatic = ctx.modelRegistry.find(config.provider, AUTO_MODEL_ID);
+      if (automatic) await pi.setModel(automatic);
+    }
     if (!ctx.hasUI) return;
     if (status.lastError) ctx.ui.notify(`Strata is unavailable; using the last successful catalog if present. ${status.lastError}`, "warning");
     for (const warning of status.warnings) ctx.ui.notify(warning, "warning");
   });
+}
+
+export default async function (pi: ExtensionAPI) {
+  await registerStrataExtension(pi);
 }

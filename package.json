@@ -1,6 +1,6 @@
 {
   "name": "pi-strata-provder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Strata provider for pi with automatic local model discovery and metadata refresh",
   "type": "module",
   "license": "MIT",

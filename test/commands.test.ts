@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import extension from "../index.ts";
+import { registerStrataExtension } from "../index.ts";
 import { explainStrataError } from "../src/errors.ts";
 
 async function harness(fn: (state: any) => Promise<void>) {
@@ -18,8 +18,9 @@ async function harness(fn: (state: any) => Promise<void>) {
     registerCommand: (_name: string, command: any) => { state.command = command; },
     on: (name: string, handler: any) => { state.handlers[name] = handler; },
     setModel: async (model: any) => { state.selection = model; return true; },
+    getSettings: () => state.settings ?? {},
   };
-  await extension(api);
+  await registerStrataExtension(api, async () => {});
   state.context = {
     hasUI: true,
     ui: { notify: (message: string, kind: string) => state.notices.push({ message, kind }), select: async () => state.selected, input: async () => state.input },
@@ -101,6 +102,23 @@ test("malformed configuration is not rewritten or quoted in an error", async () 
     assert.equal(state.notices[0].kind, "error");
     assert.ok(!state.notices[0].message.includes("secret"));
   });
+});
+
+test("a fresh local default is restored without overriding explicit, resumed or cloud selections", async () => {
+  for (const scenario of ["fresh", "explicit", "resumed", "cloud"] as const) {
+    await harness(async state => {
+      const originalArgv = process.argv;
+      try {
+        state.settings = { defaultProvider: scenario === "cloud" ? "openai" : "local", defaultModel: "strata-auto" };
+        state.context.model = { id: "other-model", provider: "openai" };
+        state.context.sessionManager = { getBranch: () => scenario === "resumed" ? [{ type: "message", message: { role: "user" } }] : [] };
+        state.context.hasUI = false;
+        if (scenario === "explicit") process.argv = [...originalArgv, "--model", "openai/other-model"];
+        await state.handlers.session_start({}, state.context);
+        assert.equal(state.selection?.id, scenario === "fresh" ? "strata-auto" : undefined);
+      } finally { process.argv = originalArgv; }
+    });
+  }
 });
 
 test("provider errors are normalized without rewriting unrelated failures", () => {

@@ -1,6 +1,6 @@
 # Release validation
 
-## v0.1.0
+## v0.1.1
 
 Validated on 2026-10-06 with:
 
@@ -15,8 +15,8 @@ Validated on 2026-10-06 with:
 Results:
 
 - Type checking: passed.
-- Offline unit tests: **38 / 38 passed**.
-- Real-service end-to-end groups: **12 / 12 passed**.
+- Offline unit tests: **43 / 43 passed**.
+- Real-service end-to-end groups: **14 / 14 passed**.
 
 | E2E group | Result |
 | --- | --- |
@@ -32,11 +32,14 @@ Results:
 | Persisted model catalog and offline catalog startup | Passed |
 | Authentication failure, cached-state retention and corrected-key recovery | Passed |
 | Actual Pi CLI loading the package and doing live inference | Passed |
+| Cold CLI startup without a cache, stored credentials or explicit model flags | Passed |
+| Unavailable local server does not cause cold CLI cloud fallback | Passed |
 
 The automatic threshold test uses temporary settings and padding to trigger real compaction without filling all 128K tokens.
 The authentication test uses a temporary key-enforcing loopback proxy; successful requests still go to the live Strata model.
 Offline startup means catalog refresh is disabled; inference remains a local HTTP request to the running server.
 No inference or summary responses are mocked.
+CLI success assertions verify both the actual `local` provider and the physical Strata model, not only the reply text.
 
 The test suite does not modify the upstream server configuration or restart/unload its model.
 It creates and removes temporary Pi configuration and workspace directories.

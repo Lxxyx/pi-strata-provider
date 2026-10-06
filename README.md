@@ -12,11 +12,13 @@ Discover local models automatically instead of maintaining a handwritten provide
 1. Start Strata. Its usual local endpoint is `http://127.0.0.1:8080/v1`.
 2. Install:
    ```sh
-   pi install git:github.com/Lxxyx/pi-strata-provder@v0.1.0
+   pi install git:github.com/Lxxyx/pi-strata-provder@v0.1.1
    ```
 3. Start Pi, run `/strata`, and choose **Apply recommended Pi setup**.
    This selects **Strata Auto (tuned)** and applies local-model compaction presets.
 4. Use Pi normally. Model metadata refreshes at startup, on opening `/model`, and through `pi update --models`.
+
+Startup discovery completes before initial model selection, including a first-ever CLI run with no cache. `--offline` / `PI_OFFLINE=1` restore the catalog without discovery network access. A fresh `local/strata-auto` default stays local when the server is unavailable; it reports a local error instead of silently using a logged-in cloud model. Explicit model choices and resumed conversations are preserved.
 
 A keyless local server works without configuration: the extension supplies `strata-local` as a placeholder.
 For a protected server, run `/login` and choose **Strata**, or use `/login local`.
@@ -245,7 +247,7 @@ For another address:
 STRATA_E2E_URL=http://127.0.0.1:8081/v1 npm run test:e2e
 ```
 
-Coverage includes startup discovery, all exposed effort levels, streamed text/usage, native tool results, real Pi write/edit/read, vision, manual compaction with retained memory, automatic threshold compaction, cancellation/recovery, cache restoration, authentication error/recovery and the actual Pi CLI.
+Coverage includes startup discovery, all exposed effort levels, streamed text/usage, native tool results, real Pi write/edit/read, vision, manual compaction with retained memory, automatic threshold compaction, cancellation/recovery, cache restoration, authentication error/recovery and the actual Pi CLI. Cold CLI tests start with no cache or stored credentials and no explicit model flag, verify the physical response provider/model, and ensure an unavailable local server does not cause cloud fallback.
 
 Automatic compaction is triggered with a temporary lower threshold and padding, rather than wasting a full 128K context.
 Authentication recovery is tested through a temporary key-enforcing loopback proxy forwarding to the real Strata server; no model responses are mocked.

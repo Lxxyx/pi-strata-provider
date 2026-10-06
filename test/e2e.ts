@@ -260,12 +260,52 @@ try {
     const packageRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
     const pkg = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
     const cli = join(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
-    const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--model", "local/strata-auto", "--thinking", "off", "--no-tools", "-p", "Reply only CLI_E2E_OK."],
+    const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--model", "local/strata-auto", "--thinking", "off", "--no-tools", "--mode", "json", "-p", "Reply only CLI_E2E_OK."],
       { cwd: workspace, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir }, timeout: 120000 });
     task.child.stdin?.end();
     const { stdout, stderr } = await task;
+    const events = stdout.trim().split("\n").map(line => JSON.parse(line));
+    const response = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").at(-1)?.message;
+    assert.equal(response?.provider, "local");
+    assert.equal(response?.model, physical.id);
+    assert.equal(response?.stopReason, "stop");
     assert.match(stdout, /CLI_E2E_OK/);
     assert.ok(!stderr.includes("Failed to load extension"), stderr);
+  });
+
+  await step("cold CLI startup without cache, stored credentials or explicit model selection", async () => {
+    const packageRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
+    const pkg = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+    const cli = join(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
+    const coldDir = join(sandbox, "cold-cli-agent"); await mkdir(coldDir);
+    await writeFile(join(coldDir, "strata-provider.json"), JSON.stringify({ baseUrl: endpoint }));
+    await writeFile(join(coldDir, "settings.json"), JSON.stringify({ defaultProvider: "local", defaultModel: "strata-auto", defaultThinkingLevel: "off" }));
+    const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--no-tools", "--mode", "json", "-p", "Reply only COLD_START_OK."],
+      { cwd: workspace, env: { ...process.env, PI_CODING_AGENT_DIR: coldDir }, timeout: 120000 });
+    task.child.stdin?.end();
+    const { stdout } = await task;
+    const events = stdout.trim().split("\n").map(line => JSON.parse(line));
+    const response = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").at(-1)?.message;
+    assert.equal(response?.provider, "local", "The CLI must not silently fall back to a cloud provider.");
+    assert.equal(response?.model, physical.id);
+    assert.equal(response?.stopReason, "stop");
+    assert.match(stdout, /COLD_START_OK/);
+  });
+  await step("cold CLI with an unavailable local server never falls back to cloud inference", async () => {
+    const packageRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
+    const pkg = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+    const cli = join(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
+    const coldDir = join(sandbox, "unavailable-cli-agent"); await mkdir(coldDir);
+    await writeFile(join(coldDir, "settings.json"), JSON.stringify({ defaultProvider: "local", defaultModel: "strata-auto", defaultThinkingLevel: "off" }));
+    const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--no-tools", "--mode", "json", "-p", "This local-only request must fail if the local server is unavailable."],
+      { cwd: workspace, env: { ...process.env, PI_CODING_AGENT_DIR: coldDir, PI_STRATA_BASE_URL: "http://127.0.0.1:1/v1" }, timeout: 120000 });
+    task.child.stdin?.end();
+    const output = await task.catch(error => ({ stdout: String(error.stdout ?? ""), stderr: String(error.stderr ?? "") }));
+    const events = output.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
+    const response = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").at(-1)?.message;
+    assert.equal(response?.provider, "local", "An unavailable local server must not cause cloud inference.");
+    assert.equal(response?.stopReason, "error");
+    assert.match(response?.errorMessage ?? "", /Strata|server|connect|ECONNREFUSED/i);
   });
   console.log(`E2E completed: ${report.tests.length} tests passed.`);
 } catch (error) {
