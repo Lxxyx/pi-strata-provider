@@ -1,0 +1,24 @@
+{
+  "name": "pi-strata-provder",
+  "version": "0.1.0",
+  "description": "Strata provider for pi with automatic local model discovery and metadata refresh",
+  "type": "module",
+  "license": "MIT",
+  "author": "Lxxyx",
+  "repository": { "type": "git", "url": "git+https://github.com/Lxxyx/pi-strata-provder.git" },
+  "keywords": ["pi-package", "local-models", "llama.cpp", "ollama", "openai-compatible"],
+  "files": ["index.ts", "src", "README.md", "README.zh-CN.md", "VALIDATION.md", "CHANGELOG.md", "LICENSE", "strata-provider.example.json"],
+  "pi": { "extensions": ["./index.ts"] },
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node --experimental-strip-types test/e2e.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=1.0.4",
+    "@earendil-works/pi-coding-agent": ">=1.0.4"
+  },
+  "devDependencies": { "@types/node": "^24.0.0", "typescript": "^5.9.0" }
+}

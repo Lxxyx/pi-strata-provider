@@ -1,0 +1,8 @@
+node_modules/
+*.tgz
+.env
+.env.*
+strata-provider.json
+coverage/
+.artifacts/
+.pi/

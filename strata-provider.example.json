@@ -1,0 +1,12 @@
+{
+  "provider": "local",
+  "baseUrl": "http://127.0.0.1:8080/v1",
+  "backend": "strata",
+  "apiKeyEnv": "STRATA_API_KEY",
+  "timeoutMs": 4000,
+  "concurrency": 4,
+  "defaultContextWindow": 32768,
+  "defaultMaxTokens": 16384,
+  "defaults": {},
+  "modelOverrides": {}
+}
