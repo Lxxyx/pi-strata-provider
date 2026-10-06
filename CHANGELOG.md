@@ -1,9 +1,17 @@
 # Changelog
 
+## 1.0.0
+
+- Start the stable version line at `1.0.0`, preserving the published `0.1.2` as historical metadata.
+- Keep `pi-strata-provider` as the canonical package/repository name and `local` as the provider ID.
+- Document official npm installation, stable version pinning and migration from the old Git source.
+- Add public official-registry publish defaults and clarify release authentication and verification.
+- Preserve the runtime behavior covered by 43 offline tests and the previous 14 real-service E2E groups.
+
 ## 0.1.2
 
 - Correct the package and repository name to `pi-strata-provider`.
-- Prepare the public npm release and document npm, GitHub and official-registry installation.
+- Publish the public npm package and document npm, GitHub and official-registry installation.
 - Keep the provider ID `local` and all existing model, authentication and tuning behavior unchanged.
 
 ## 0.1.1
@@ -23,4 +31,4 @@
 - Support model aliases, idle-unloaded Strata models, runtime context limits and server sampling defaults.
 - Add English documentation with an optional Simplified Chinese translation.
 - Validate streaming, tools, vision, compaction, cancellation, cache restoration and authentication recovery against a real local Strata service.
-- Publish source and installable package archives through GitHub; npm publication is deferred.
+- Publish source and package archives through GitHub; npm publication was deferred for this initial release.

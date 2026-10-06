@@ -1,9 +1,10 @@
 {
   "name": "pi-strata-provider",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "description": "Strata provider for pi with automatic local model discovery and metadata refresh",
   "type": "module",
   "license": "MIT",
+  "publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" },
   "author": "Lxxyx",
   "repository": { "type": "git", "url": "git+https://github.com/Lxxyx/pi-strata-provider.git" },
   "keywords": ["pi-package", "local-models", "llama.cpp", "ollama", "openai-compatible"],

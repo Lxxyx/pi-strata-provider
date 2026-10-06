@@ -5,7 +5,9 @@ Discover local models automatically instead of maintaining a handwritten provide
 
 [简体中文文档](README.zh-CN.md) · [MIT license](LICENSE)
 
-> Package and repository name: `pi-strata-provider`.
+> Package and repository name: `pi-strata-provider`. The stable release line starts at **1.0.0**.
+>
+> [npm package](https://www.npmjs.com/package/pi-strata-provider) · [GitHub releases](https://github.com/Lxxyx/pi-strata-provider/releases)
 
 ## Quick start
 
@@ -26,7 +28,7 @@ For a protected server, run `/login` and choose **Strata**, or use `/login local
 You can also install the pinned GitHub release:
 
 ```sh
-pi install git:github.com/Lxxyx/pi-strata-provider@v0.1.2
+pi install git:github.com/Lxxyx/pi-strata-provider@v1.0.0
 ```
 
 If your npm registry mirror has not synced this new package yet, use the official registry:
@@ -231,6 +233,26 @@ llama.cpp mode inspects explicit template effort whitelists and uses configurabl
 Sleeping llama.cpp models are not woken just to inspect a template.
 Strata aliases and idle-unloaded models remain usable, since Strata's metadata endpoints do not load them.
 
+## Upgrading an initial installation
+
+The stable version line starts at `1.0.0`; published `0.x` versions remain historical releases.
+To pin the stable package:
+
+```sh
+pi install npm:pi-strata-provider@1.0.0
+```
+
+If `pi list` still shows an old Git installation, remove that **exact source** before installing the npm package. Do not keep both sources enabled: they register the same provider and command. The early Git source used a misspelled repository name; removing that source does not remove your Strata configuration, native credentials or model history.
+For the original `v0.1.1` source:
+
+```sh
+pi remove git:github.com/Lxxyx/pi-strata-provder@v0.1.1
+pi install npm:pi-strata-provider
+```
+
+The provider ID remains `local`, the automatic model remains `local/strata-auto`, and the optional configuration remains `strata-provider.json`.
+The correctly spelled npm package is `pi-strata-provider`.
+
 ## Migrating a handwritten local provider
 
 Remove the old `providers.local` block from `models.json` after backing it up.
@@ -266,6 +288,21 @@ Authentication recovery is tested through a temporary key-enforcing loopback pro
 A sanitized report is written to `.artifacts/e2e-report.json`.
 
 See [VALIDATION.md](VALIDATION.md) for the release acceptance record.
+
+## Publishing
+
+Package metadata targets the public official npm registry; no registry token belongs in this repository.
+For the first stable release:
+
+```sh
+npm run check
+npm pack
+npm publish pi-strata-provider-1.0.0.tgz --registry=https://registry.npmjs.org/ --access=public --tag=latest
+npm view pi-strata-provider@1.0.0 version dist.integrity --registry=https://registry.npmjs.org/
+```
+
+A successful browser authentication screen alone is not proof of publication: verify the final publish output and registry metadata. npm may require a fresh two-factor challenge or a compliant publishing credential. Disabling account two-factor authentication does not remove npm publishing requirements.
+Published versions and public Git tags are immutable; documentation-only updates can be made on `main` without republishing the same npm version.
 
 ## Upstream references
 

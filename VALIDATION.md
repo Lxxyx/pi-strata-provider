@@ -1,5 +1,14 @@
 # Release validation
 
+## v1.0.0
+
+The stable release changes version metadata, publishing defaults and documentation only; runtime provider behavior is unchanged from the validated implementation below.
+
+- Type checking and all **43 offline tests** passed again on 2026-10-06.
+- The previous **14 real-service groups** remain the runtime acceptance baseline recorded under v0.1.1.
+- The live endpoint was unavailable while preparing the stable release, so live inference was **not** rerun and is not claimed as new v1.0.0 E2E coverage.
+- `0.1.2` was independently verified in the official npm registry with its published archive integrity before preparing this release.
+
 ## v0.1.1
 
 Validated on 2026-10-06 with:

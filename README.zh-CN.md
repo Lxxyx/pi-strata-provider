@@ -4,7 +4,9 @@
 
 [English documentation](README.md) · [MIT 许可证](LICENSE)
 
-> 软件包和仓库统一命名为 `pi-strata-provider`。
+> 软件包和仓库统一命名为 `pi-strata-provider`，正式稳定版本从 **1.0.0** 开始。
+>
+> [软件包页面](https://www.npmjs.com/package/pi-strata-provider) · [仓库发行版](https://github.com/Lxxyx/pi-strata-provider/releases)
 
 ## 快速开始
 
@@ -21,7 +23,7 @@
 也可以安装固定版本的仓库发行版：
 
 ```sh
-pi install git:github.com/Lxxyx/pi-strata-provider@v0.1.2
+pi install git:github.com/Lxxyx/pi-strata-provider@v1.0.0
 ```
 
 如果本机的镜像站尚未同步新包，可以临时指定官方注册表，不改全局设置：
@@ -155,6 +157,26 @@ Strata 可选的 `fit_max_tokens: true` 能将输出缩短到实际剩余空间�
 可选兼容模式包括其他聊天模板服务器、奥拉玛及标准兼容服务。
 本版本真实服务验收的对象是 Strata；其他模式仅有元数据单元测试，不能理解为同等程度的真实服务验证。
 
+## 从初始安装升级
+
+正式稳定版本从 `1.0.0` 开始；已经发布的早期版本保留为历史记录。
+如需固定稳定版本：
+
+```sh
+pi install npm:pi-strata-provider@1.0.0
+```
+
+如果 `pi list` 仍显示旧的仓库安装源，先移除显示的那个精确来源，再安装软件包。不要同时启用两个安装源，否则会重复注册同一提供商和命令。
+最初的仓库安装源存在拼写错误；移除安装源不会删除服务配置、原生凭据或模型历史。
+原始 `v0.1.1` 安装源的迁移命令：
+
+```sh
+pi remove git:github.com/Lxxyx/pi-strata-provder@v0.1.1
+pi install npm:pi-strata-provider
+```
+
+正确包名是 `pi-strata-provider`。提供商标识仍为 `local`，自动模型仍为 `local/strata-auto`，可选配置文件仍为 `strata-provider.json`。
+
 ## 从手写模型配置迁移
 
 备份 `models.json` 后，移除旧的 `providers.local` 配置块。
@@ -179,6 +201,22 @@ npm run test:e2e
 认证恢复通过临时回环代理执行密钥检查，再转发到真实服务；不伪造模型回答。
 
 [验收记录](VALIDATION.md) 记录了发布测试结果。
+
+## 发布
+
+包元数据默认指定官方公开注册表，不要将发布令牌写入仓库。
+正式稳定版的发布命令：
+
+```sh
+npm run check
+npm pack
+npm publish pi-strata-provider-1.0.0.tgz --registry=https://registry.npmjs.org/ --access=public --tag=latest
+npm view pi-strata-provider@1.0.0 version dist.integrity --registry=https://registry.npmjs.org/
+```
+
+网页显示认证成功，不代表软件包已经发布；应检查最终发布输出和官方注册表中的版本及校验值。
+注册表可能要求新的双重验证或符合政策的发布凭据；关闭账号双重验证不会取消注册表的发布要求。
+已经发布的软件包版本和公开标签不覆盖；仅更新文档时可以修改仓库主分支，不必重复发布同一软件包版本。
 
 ## 开源协议
 
