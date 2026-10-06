@@ -1,18 +1,18 @@
-# pi-strata-provder
+# pi-strata-provider
 
 A tuned [Strata](https://github.com/Niko1221/Strata) provider for [Pi](https://pi.dev).
 Discover local models automatically instead of maintaining a handwritten provider catalog.
 
 [简体中文文档](README.zh-CN.md) · [MIT license](LICENSE)
 
-> The package name intentionally uses `provder`. It has not been published to npm yet; install from GitHub.
+> Package and repository name: `pi-strata-provider`.
 
 ## Quick start
 
 1. Start Strata. Its usual local endpoint is `http://127.0.0.1:8080/v1`.
 2. Install:
    ```sh
-   pi install git:github.com/Lxxyx/pi-strata-provder@v0.1.1
+   pi install npm:pi-strata-provider
    ```
 3. Start Pi, run `/strata`, and choose **Apply recommended Pi setup**.
    This selects **Strata Auto (tuned)** and applies local-model compaction presets.
@@ -22,6 +22,18 @@ Startup discovery completes before initial model selection, including a first-ev
 
 A keyless local server works without configuration: the extension supplies `strata-local` as a placeholder.
 For a protected server, run `/login` and choose **Strata**, or use `/login local`.
+
+You can also install the pinned GitHub release:
+
+```sh
+pi install git:github.com/Lxxyx/pi-strata-provider@v0.1.2
+```
+
+If your npm registry mirror has not synced this new package yet, use the official registry:
+
+```sh
+npm_config_registry=https://registry.npmjs.org/ pi install npm:pi-strata-provider
+```
 
 Requires Pi / Pi AI **1.0.4 or newer** and Node **22.18 or newer**.
 Verified with Pi 1.0.4, Strata 0.1.39, and a live Swift Qwen3.8 model with vision enabled.

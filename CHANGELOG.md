@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- Correct the package and repository name to `pi-strata-provider`.
+- Prepare the public npm release and document npm, GitHub and official-registry installation.
+- Keep the provider ID `local` and all existing model, authentication and tuning behavior unchanged.
+
 ## 0.1.1
 
 - Discover and persist the native catalog before initial model selection, including first-ever CLI startup without a cache.

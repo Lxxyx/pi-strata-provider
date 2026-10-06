@@ -1,22 +1,34 @@
-# pi-strata-provder
+# pi-strata-provider
 
 为本地推理服务 Strata 提供自动模型发现和安全调优的 pi 扩展。
 
 [English documentation](README.md) · [MIT 许可证](LICENSE)
 
-> 包名按原定名称保留了 `provder` 拼写。当前通过代码托管仓库安装，尚未发布到软件包注册服务。
+> 软件包和仓库统一命名为 `pi-strata-provider`。
 
 ## 快速开始
 
 1. 启动本地 Strata 服务，通常地址为 `http://127.0.0.1:8080/v1`。
 2. 安装扩展：
    ```sh
-   pi install git:github.com/Lxxyx/pi-strata-provder@v0.1.1
+   pi install npm:pi-strata-provider
    ```
 3. 启动 pi，输入 `/strata`，选择“Apply recommended Pi setup”。
 4. 正常使用。扩展在启动、打开模型选择器以及刷新模型目录时获取最新元数据。
 
 启动发现会在初始模型选择前完成，包括没有缓存的首次命令行启动。`--offline` 或 `PI_OFFLINE=1` 只恢复目录，不联网发现。全新会话默认选择 `local/strata-auto` 时，服务不可用会报告本地错误，不会悄悄调用已经登录的云端模型；显式模型选择和恢复的已有会话不受影响。
+
+也可以安装固定版本的仓库发行版：
+
+```sh
+pi install git:github.com/Lxxyx/pi-strata-provider@v0.1.2
+```
+
+如果本机的镜像站尚未同步新包，可以临时指定官方注册表，不改全局设置：
+
+```sh
+npm_config_registry=https://registry.npmjs.org/ pi install npm:pi-strata-provider
+```
 
 要求 pi 及其模型接口库至少为 1.0.4，运行环境至少为 Node 22.18。
 
