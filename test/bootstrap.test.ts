@@ -5,8 +5,8 @@ import { normalizeConfig } from "../src/config.ts";
 import { createStrataProvider } from "../src/provider.ts";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 
-async function bootstrap(argv: string[] = [], env: NodeJS.ProcessEnv = {}) {
-  const config = normalizeConfig({});
+async function bootstrap(argv: string[] = [], env: NodeJS.ProcessEnv = {}, raw: Record<string, unknown> = { provider: "local" }) {
+  const config = normalizeConfig(raw);
   const { provider } = createStrataProvider(config);
   const calls: Array<[string, unknown]> = [];
   await bootstrapCatalog(provider, config, {

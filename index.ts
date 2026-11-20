@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, type LocalModel } from "./src/config.ts";
 import { createStrataProvider } from "./src/provider.ts";
 import { saveConnection, saveRecommendedSetup } from "./src/storage.ts";
-import { AUTO_MODEL_ID, chooseModel, compactionPreset } from "./src/tuning.ts";
+import { AUTO_MODEL_ID, chooseModel, compactionPreset, supportedThinkingLevel } from "./src/tuning.ts";
 import { explainStrataError } from "./src/errors.ts";
 import { bootstrapCatalog } from "./src/bootstrap.ts";
 
@@ -16,7 +16,7 @@ export async function registerStrataExtension(pi: ExtensionAPI, bootstrap = boot
     provider: config.provider,
     id: AUTO_MODEL_ID,
     name: "Strata Auto (tuned)",
-    thinkingLevels: ["off", "low", "medium", "high"],
+    thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
     input: ["text", "image"],
     route(request, ctx) {
       const models = ctx.modelRegistry.getAvailable().filter((model): model is LocalModel =>
@@ -26,8 +26,7 @@ export async function registerStrataExtension(pi: ExtensionAPI, bootstrap = boot
       const requiresImage = request.messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image"));
       const model = chooseModel(models, sticky?.model.id, requiresImage);
       // Direct requests include compaction and branch summaries: use fast, bounded reasoning.
-      const thinkingLevel = !model.reasoning ? "off" : request.reason === "direct" ?
-        model.thinkingLevelMap?.low === null ? "off" : "low" : request.thinkingLevel;
+      const thinkingLevel = supportedThinkingLevel(model, request.reason === "direct" ? "low" : request.thinkingLevel ?? "high");
       return { model, thinkingLevel };
     },
   });
@@ -84,6 +83,7 @@ export async function registerStrataExtension(pi: ExtensionAPI, bootstrap = boot
           `Models: ${status.models} (${status.source})`,
           `API key required: ${status.authenticationRequired === undefined ? "unknown" : status.authenticationRequired ? "yes" : "no"}`,
           "API key: /login -> Strata, or STRATA_API_KEY (default: strata-local)",
+          `Local Strata state: ${config.readLocalState ? "on" : "off"}, capability probe: ${config.capabilityProbe ? "on" : "off"}`,
           ...(status.checkedAt ? [`Last refresh: ${new Date(status.checkedAt).toISOString()}`] : []),
           ...provider.getModels().map(model => `${model.id}: context=${model.contextWindow}, output=${model.maxTokens}, reasoning=${model.reasoning}, input=${model.input.join("+")}, compaction=${JSON.stringify(compactionPreset(model))}`),
           ...status.warnings,

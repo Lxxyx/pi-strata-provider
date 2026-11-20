@@ -6,6 +6,9 @@ import { createStrataProvider } from "../src/provider.ts";
 import { chooseModel, compactionPreset } from "../src/tuning.ts";
 
 const model: LocalModel = { id: "test-model", name: "test-model", provider: "local", api: "openai-completions", baseUrl: "http://127.0.0.1:8080/v1", input: ["text"], reasoning: true, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 131072, maxTokens: 16384 };
+// Tests must not read the developer's real Strata installation, and a cached catalog only counts for its own provider id.
+const isolated = { localState: { instances: [], endpoints: [] } };
+const strata = (raw: Record<string, unknown> = {}) => normalizeConfig({ provider: "local", ...raw });
 function context(extra: Partial<RefreshModelsContext> = {}, publications: ModelsPublication[] = []): RefreshModelsContext {
   return { allowNetwork: false, signal: new AbortController().signal,
     publish: async publication => { publications.push(publication); publication.update?.(); return true; }, ...extra };
@@ -13,7 +16,7 @@ function context(extra: Partial<RefreshModelsContext> = {}, publications: Models
 
 test("restores cached models without network access", async () => {
   let calls = 0;
-  const { provider, status } = createStrataProvider(normalizeConfig({}), { fetcher: async () => { calls++; throw new Error("unexpected"); } });
+  const { provider, status } = createStrataProvider(strata(), { fetcher: async () => { calls++; throw new Error("unexpected"); }, ...isolated });
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   assert.equal(calls, 0);
   assert.equal(provider.getModels()[0].id, model.id);
@@ -21,13 +24,13 @@ test("restores cached models without network access", async () => {
 });
 
 test("does not restore another server's cached catalog", async () => {
-  const { provider } = createStrataProvider(normalizeConfig({ baseUrl: "http://localhost:8081/v1" }));
+  const { provider } = createStrataProvider(strata({ baseUrl: "http://localhost:8081/v1" }));
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   assert.equal(provider.getModels().length, 0);
 });
 
 test("keeps the last successful catalog on a failed refresh", async () => {
-  const { provider, status } = createStrataProvider(normalizeConfig({}), { fetcher: async () => new Response("{}", { status: 401 }) });
+  const { provider, status } = createStrataProvider(strata(), { fetcher: async () => new Response("{}", { status: 401 }), ...isolated });
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   await assert.rejects(provider.refreshModels!(context({ allowNetwork: true })), /HTTP 401/);
   assert.equal(provider.getModels()[0].id, model.id);
@@ -35,7 +38,7 @@ test("keeps the last successful catalog on a failed refresh", async () => {
 });
 
 test("publishes a successful empty catalog so removed models disappear", async () => {
-  const { provider } = createStrataProvider(normalizeConfig({}), { fetcher: async () => Response.json({ data: [] }) });
+  const { provider } = createStrataProvider(strata(), { fetcher: async () => Response.json({ data: [] }), ...isolated });
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   const publications: ModelsPublication[] = [];
   await provider.refreshModels!(context({ allowNetwork: true }, publications));
@@ -44,14 +47,14 @@ test("publishes a successful empty catalog so removed models disappear", async (
 });
 
 test("rejects superseded publications without swapping live state", async () => {
-  const { provider } = createStrataProvider(normalizeConfig({}), { fetcher: async () => Response.json({ data: [] }) });
+  const { provider } = createStrataProvider(strata(), { fetcher: async () => Response.json({ data: [] }), ...isolated });
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   await provider.refreshModels!(context({ allowNetwork: true, publish: async () => false }));
   assert.equal(provider.getModels().length, 1);
 });
 
 test("continues with live metadata when the model store is read-only", async () => {
-  const { provider, status } = createStrataProvider(normalizeConfig({}), { fetcher: async () => Response.json({ data: [] }) });
+  const { provider, status } = createStrataProvider(strata(), { fetcher: async () => Response.json({ data: [] }), ...isolated });
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   await provider.refreshModels!(context({ allowNetwork: true, publish: async publication => {
     if (publication.persist) throw new Error("read-only");
@@ -63,7 +66,7 @@ test("continues with live metadata when the model store is read-only", async () 
 });
 
 test("aborted refreshes do not overwrite or persist cached state", async () => {
-  const { provider } = createStrataProvider(normalizeConfig({}));
+  const { provider } = createStrataProvider(strata(), isolated);
   await provider.refreshModels!(context({ stored: { models: [model], checkedAt: 1 } }));
   const controller = new AbortController(); controller.abort();
   const publications: ModelsPublication[] = [];
@@ -73,13 +76,21 @@ test("aborted refreshes do not overwrite or persist cached state", async () => {
 });
 
 test("keyless servers have usable native authentication with a placeholder", async () => {
-  const { provider } = createStrataProvider(normalizeConfig({}));
+  const { provider } = createStrataProvider(strata(), isolated);
   const auth = await provider.auth.apiKey!.resolve({ ctx: { env: async () => undefined } as any, signal: new AbortController().signal });
   assert.equal(auth?.auth.apiKey, "strata-local");
 });
 
+test("the key Strata wrote into its own launch profiles authenticates the gateway", async () => {
+  const { provider } = createStrataProvider(strata(), {
+    ...isolated, localState: { instances: [], endpoints: [{ baseUrl: "http://127.0.0.1:8080/v1", apiKey: "sk-strata-discovered", source: "launch.json" }] },
+  });
+  const auth = await provider.auth.apiKey!.resolve({ ctx: { env: async () => undefined } as any, signal: new AbortController().signal });
+  assert.equal(auth?.auth.apiKey, "sk-strata-discovered");
+});
+
 test("stored credentials take precedence over environment and inline keys", async () => {
-  const { provider } = createStrataProvider(normalizeConfig({ apiKey: "inline" }));
+  const { provider } = createStrataProvider(strata({ apiKey: "inline" }), isolated);
   const auth = await provider.auth.apiKey!.resolve({ ctx: { env: async () => "environment" } as any,
     credential: { type: "api_key", key: "stored" }, signal: new AbortController().signal });
   assert.equal(auth?.auth.apiKey, "stored");
@@ -87,7 +98,9 @@ test("stored credentials take precedence over environment and inline keys", asyn
 
 test("compaction reserves output headroom and retains useful recent history", () => {
   assert.deepEqual(compactionPreset(model), { reserveTokens: 32768, keepRecentTokens: 20000 });
-  assert.deepEqual(compactionPreset({ contextWindow: 32768, maxTokens: 8192 }), { reserveTokens: 12288, keepRecentTokens: 8192 });
+  // A small window still has to hold a full reply (output ceiling plus its thinking) next to the summary.
+  assert.deepEqual(compactionPreset({ contextWindow: 32768, maxTokens: 8192 }), { reserveTokens: 16384, keepRecentTokens: 8192 });
+  assert.deepEqual(compactionPreset({ contextWindow: 32768, maxTokens: 8192, reasoning: false }), { reserveTokens: 12288, keepRecentTokens: 8192 });
 });
 
 test("automatic routing stays sticky while supporting changed model IDs", () => {

@@ -1,5 +1,22 @@
 # Release validation
 
+## Unreleased: Strata 0.1.63 gateway discovery
+
+Validated on 2026-11-20 with:
+
+- Windows 10.0.19045 / Node 25.9.0
+- Pi, Pi AI and Pi coding agent 1.5.2
+- Strata 0.1.63 (`win/control/VERSION`), gateway on `http://127.0.0.1:8080/v1` with an API key required, the key published in `AppData/Local/Strata/launch/*.json`
+- Live model: `iq3_xxs`, actual runtime context 131,072 tokens, vision enabled
+
+Results:
+
+- Type checking: passed.
+- Offline unit tests: **62 / 62 passed**, 13 of them asserting transcripts taken from this host (the gateway 404s `/props`, `/health` and `/models`, answers `/v1/models` with `context_length` and `meta.n_ctx`, the engine answers `/props?model=...`, instance records carry dynamic ports and keys).
+- Real-service end-to-end groups: **14 / 14 passed**, including live inference, vision, native tool calls, manual and automatic compaction with a retained memory token, cancellation, offline restore, authentication-failure guidance and stored-key recovery.
+- CLI with the extension loaded: the catalog lists `local/iq3_xxs` at 131.1K context and 32.8K max output, `local/strata-auto` is registered, and `pi -p` completes inference on the automatic model.
+- Measured endpoint behavior: gateway `GET /props|/health|/models` -> 404 or HTML; gateway `GET /v1/models` -> 200 with `context_length=131072`, `meta.n_ctx=131072`, `architecture.input_modalities=[text, image]`; engine `GET /props?model=...` -> 200 with the chat template and template efforts.
+
 ## v1.0.0
 
 The stable release changes version metadata, publishing defaults and documentation only; runtime provider behavior is unchanged from the validated implementation below.

@@ -8,6 +8,27 @@
 >
 > [软件包页面](https://www.npmjs.com/package/pi-strata-provider) · [仓库发行版](https://github.com/Lxxyx/pi-strata-provider/releases)
 
+## Strata 0.1.63：网关只响应 `/v1/*`
+
+`/props`、`/health`、`/api/models` 由 Strata 的 **引擎** 提供，而不是提供商请求的网关。0.1.63 的网关只服务 `/v1/*`，对 `/props`、`/health`、`/models` 返回 404（部分路径被它的 HTML 应用吃掉），也不发布 `max_generated`，所以发现流程要么拿不到目录，要么拿到错误的上下文窗口。实测结果：
+
+```text
+网关  GET /props、/health、/models   -> 404 {"error":"No route for GET /props"}（或 HTML）
+网关  GET /v1/models                -> 200  context_length=131072、meta.n_ctx=131072、
+                                          architecture.input_modalities=[text, image]
+引擎  GET /props?model=<id>          -> 200  聊天模板、生成默认值、模板可用推理等级
+```
+
+发现流程现在实测正在运行的安装，而不是假设它的形态：
+
+- 目录来自网关的 `/v1/models`（`context_length`、`meta.n_ctx`、`architecture.input_modalities`），只有网关不报告时才查询引擎的 `/props`；
+- 两边都没说模型是否会思考时，提供商只向该模型发一次极小的 `Please think` 请求，而不是默认 `false`（正是这一点会让支持推理的模型静默失去思考能力）；
+- 端点、动态引擎端口、API 密钥、模板与网关密钥直接读 Strata 自己的状态文件（`AppData/Local/Strata/launch/*.json`、`~/.strata/data/native-instances/*.json`），受保护的网关无需手写密钥即可认证；
+- 思考预算按级别下发 `reasoning_budget_tokens`（不超过输出上限的一半，`off` 下发显式的 `0` 以关闭服务配置的预算），长计划无法挤掉回答；compaction 预留输出上限 **加上** 思考；
+- `defaultMaxTokens` 提高到 32768：Strata 会把超限的回答裁剪到上下文剩余空间。
+
+新选项：`readLocalState` / `PI_STRATA_LOCAL_STATE` 与 `capabilityProbe` / `PI_STRATA_CAPABILITY_PROBE` 可以关闭这两个新的发现来源；`provider` / `PI_STRATA_PROVIDER` 选择提供商标识。
+
 ## 快速开始
 
 1. 启动本地 Strata 服务，通常地址为 `http://127.0.0.1:8080/v1`。
@@ -34,7 +55,7 @@ npm_config_registry=https://registry.npmjs.org/ pi install npm:pi-strata-provide
 
 要求 pi 及其模型接口库至少为 1.0.4，运行环境至少为 Node 22.18。
 
-默认提供商名称是 `local`，自动模型入口是 `local/strata-auto`。
+默认提供商名称仍是 `local`，自动模型入口是 `local/strata-auto`。设置 `provider`（或 `PI_STRATA_PROVIDER`）可以沿用已有标识，例如 `"provider": "strata"`；登录目标、目录缓存与自动模型都会跟随它。
 切换本地实际模型后，不必修改默认模型标识。
 
 ## 服务地址和密钥在哪里设置
@@ -175,7 +196,7 @@ pi remove git:github.com/Lxxyx/pi-strata-provder@v0.1.1
 pi install npm:pi-strata-provider
 ```
 
-正确包名是 `pi-strata-provider`。提供商标识仍为 `local`，自动模型仍为 `local/strata-auto`，可选配置文件仍为 `strata-provider.json`。
+正确包名是 `pi-strata-provider`。提供商标识默认为 `local`，自动模型为 `local/strata-auto`，两者都跟随配置的 provider；可选配置文件仍为 `strata-provider.json`。
 
 ## 从手写模型配置迁移
 

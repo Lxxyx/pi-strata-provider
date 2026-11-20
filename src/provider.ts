@@ -2,6 +2,7 @@ import type { Provider, ProviderStreams, RefreshModelsContext } from "@earendil-
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import type { Config, LocalModel } from "./config.ts";
 import { applyOverrides, discover, type Fetcher } from "./discovery.ts";
+import { localStrataState, type LocalStrataState } from "./native.ts";
 
 export interface ProviderStatus {
   backend: string;
@@ -13,10 +14,18 @@ export interface ProviderStatus {
   lastError?: string;
 }
 
-export function createStrataProvider(config: Config, dependencies: { fetcher?: Fetcher; streams?: ProviderStreams } = {}) {
+export function createStrataProvider(config: Config, dependencies: { fetcher?: Fetcher; streams?: ProviderStreams; localState?: LocalStrataState } = {}) {
   const streams = dependencies.streams ?? openAICompletionsApi();
   let models: readonly LocalModel[] = [];
   const status: ProviderStatus = { backend: config.backend, models: 0, source: "empty", warnings: [] };
+  // Strata writes the key of its own gateway into its launch profiles: use it instead of guessing.
+  let local: Promise<LocalStrataState | undefined> | undefined;
+  const readLocal = (): Promise<LocalStrataState | undefined> => {
+    if (!config.readLocalState) return Promise.resolve(undefined);
+    if (dependencies.localState) return Promise.resolve(dependencies.localState);
+    if (!local) local = localStrataState().catch(() => undefined);
+    return local;
+  };
   const provider: Provider<"openai-completions"> = {
     id: config.provider,
     name: "Strata",
@@ -29,7 +38,8 @@ export function createStrataProvider(config: Config, dependencies: { fetcher?: F
           key: (await interaction.prompt({ type: "secret", message: "Strata API key (leave blank for a keyless local server)" })).trim() || undefined,
         }),
         resolve: async ({ ctx, credential }) => {
-          const key = credential?.key ?? await ctx.env(config.apiKeyEnv) ?? config.apiKey ?? "strata-local";
+          const discovered = (await readLocal())?.endpoints.find(endpoint => endpoint.baseUrl === config.baseUrl)?.apiKey;
+          const key = credential?.key ?? await ctx.env(config.apiKeyEnv) ?? config.apiKey ?? discovered ?? "strata-local";
           return {
             auth: { apiKey: key, baseUrl: config.baseUrl },
             source: credential?.key ? "stored API key" : key === "strata-local" ? "keyless local server" : "configured API key",
@@ -55,7 +65,10 @@ export function createStrataProvider(config: Config, dependencies: { fetcher?: F
       if (!context.allowNetwork || context.signal.aborted) return;
       try {
         const apiKey = context.credential?.type === "api_key" ? context.credential.key : undefined;
-        const result = await discover(config, { apiKey, signal: context.signal, previous: models, fetcher: dependencies.fetcher });
+        const result = await discover(config, {
+          apiKey, signal: context.signal, previous: models, fetcher: dependencies.fetcher,
+          localState: await readLocal(), capabilityProbe: config.capabilityProbe,
+        });
         if (context.signal.aborted) return;
         const checkedAt = Date.now();
         const update = () => {
