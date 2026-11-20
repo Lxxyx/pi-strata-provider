@@ -15,19 +15,26 @@ export interface Config {
   concurrency: number;
   defaultContextWindow: number;
   defaultMaxTokens: number;
+  /** Read the local Strata installation (engine ports, keys, pack templates, gateway key). */
+  readLocalState: boolean;
+  /** Ask a model once whether it thinks, when neither server published properties. */
+  capabilityProbe: boolean;
   defaults: ModelOverride;
   modelOverrides: Record<string, ModelOverride>;
 }
 
 export const DEFAULT_CONFIG: Config = {
-  provider: "local",
+  provider: "strata",
   baseUrl: "http://127.0.0.1:8080/v1",
   backend: "strata",
   apiKeyEnv: "STRATA_API_KEY",
   timeoutMs: 4000,
   concurrency: 4,
   defaultContextWindow: 32768,
-  defaultMaxTokens: 16384,
+  // Strata clamps an oversized answer to the room left in the context, so a wide default is safe.
+  defaultMaxTokens: 32768,
+  readLocalState: true,
+  capabilityProbe: true,
   defaults: {},
   modelOverrides: {},
 };
@@ -65,6 +72,9 @@ export function normalizeConfig(raw: unknown): Config {
     throw new Error("Invalid API key environment variable name.");
   }
   if (config.apiKey !== undefined && typeof config.apiKey !== "string") throw new Error("API key must be a string.");
+  for (const key of ["readLocalState", "capabilityProbe"] as const) {
+    if (typeof config[key] !== "boolean") throw new Error(`Option must be a boolean: ${key}`);
+  }
   if (!record(config.defaults) || !record(config.modelOverrides)) throw new Error("Defaults and model overrides must be objects.");
   for (const override of [config.defaults, ...Object.values(config.modelOverrides)]) {
     if (!record(override)) throw new Error("Each model override must be an object.");
@@ -105,6 +115,14 @@ export async function loadConfig(): Promise<Config> {
     if (process.env.PI_STRATA_CONFIG) throw new Error("The specified Strata provider configuration file does not exist.");
   }
   const config = normalizeConfig(raw);
-  if (process.env.PI_STRATA_BASE_URL) return normalizeConfig({ ...config, baseUrl: process.env.PI_STRATA_BASE_URL });
-  return config;
+  const overrides: Record<string, unknown> = {};
+  // The provider id is decided by whichever configuration is active, so that every reader (CLI runtime key,
+  // session defaults, stored catalog) agrees on it.
+  if (process.env.PI_STRATA_PROVIDER) overrides.provider = process.env.PI_STRATA_PROVIDER;
+  if (process.env.PI_STRATA_BASE_URL) overrides.baseUrl = process.env.PI_STRATA_BASE_URL;
+  for (const [name, option] of [["PI_STRATA_LOCAL_STATE", "readLocalState"], ["PI_STRATA_CAPABILITY_PROBE", "capabilityProbe"]] as const) {
+    const value = process.env[name];
+    if (value !== undefined && value !== "") overrides[option] = !/^(0|false|off|no)$/i.test(value);
+  }
+  return normalizeConfig({ ...config, ...overrides });
 }

@@ -8,6 +8,12 @@
 >
 > [软件包页面](https://www.npmjs.com/package/pi-strata-provider) · [仓库发行版](https://github.com/Lxxyx/pi-strata-provider/releases)
 
+## 本分支：适配 Windows 上的 Strata 0.1.63
+
+上游 1.0.0 通过 `/props`、`/health`、`/api/models` 发现模型目录。0.1.63 这些接口只在 **引擎** 端口上存在：网关只服务 `/v1/*`，对 `/props`、`/health`、`/models` 返回 404（部分路径会被 HTML 页面吞掉），也不提供 `max_generated`，所以目录要么拿到错误的上下文窗口，要么完全为空。
+
+本分支改为实测正在运行的安装：目录来自网关的 `/v1/models`（`context_length`、`meta.n_ctx`、`architecture.input_modalities`），只有网关不报告时才回退到引擎的 `/props`；端点、端口与密钥直接读 Strata 自己的状态文件（`AppData/Local/Strata/launch/*.json`、`~/.strata/data/native-instances/*.json`），受保护的网关无需手写密钥即可认证；提供商标识默认是 **`strata`**；思考预算按级别下发 `reasoning_budget_tokens` 且不超过输出上限的一半。测量记录见 [FORK-PLAN.md](FORK-PLAN.md)。
+
 ## 快速开始
 
 1. 启动本地 Strata 服务，通常地址为 `http://127.0.0.1:8080/v1`。
@@ -18,7 +24,7 @@
 3. 启动 pi，输入 `/strata`，选择“Apply recommended Pi setup”。
 4. 正常使用。扩展在启动、打开模型选择器以及刷新模型目录时获取最新元数据。
 
-启动发现会在初始模型选择前完成，包括没有缓存的首次命令行启动。`--offline` 或 `PI_OFFLINE=1` 只恢复目录，不联网发现。全新会话默认选择 `local/strata-auto` 时，服务不可用会报告本地错误，不会悄悄调用已经登录的云端模型；显式模型选择和恢复的已有会话不受影响。
+启动发现会在初始模型选择前完成，包括没有缓存的首次命令行启动。`--offline` 或 `PI_OFFLINE=1` 只恢复目录，不联网发现。全新会话默认选择 `strata/strata-auto` 时，服务不可用会报告本地错误，不会悄悄调用已经登录的云端模型；显式模型选择和恢复的已有会话不受影响。
 
 也可以安装固定版本的仓库发行版：
 
@@ -34,13 +40,13 @@ npm_config_registry=https://registry.npmjs.org/ pi install npm:pi-strata-provide
 
 要求 pi 及其模型接口库至少为 1.0.4，运行环境至少为 Node 22.18。
 
-默认提供商名称是 `local`，自动模型入口是 `local/strata-auto`。
+默认提供商名称是 `strata`（上游为 `local`），自动模型入口是 `strata/strata-auto`。
 切换本地实际模型后，不必修改默认模型标识。
 
 ## 服务地址和密钥在哪里设置
 
 - `/strata`：打开菜单，配置服务地址、查看状态、刷新模型或应用推荐设置。
-- `/login local`：使用 pi 原生认证流程保存真正的服务端密钥。
+- `/login strata`：使用 pi 原生认证流程保存真正的服务端密钥。
 - 也可以通过 `STRATA_API_KEY` 环境变量提供密钥。
 - 无认证的本地服务不需要填写密钥，默认占位值为 `strata-local`。
 
@@ -68,7 +74,7 @@ pi 不是浏览器，无须为它开放浏览器跨域访问。
 | `/strata url` | 修改地址并重新加载 |
 | `/strata setup` | 应用推荐设置并重新加载 |
 | `/strata key` | 查看密钥配置说明 |
-| `/login local` | 保存密钥 |
+| `/login strata` | 保存密钥 |
 
 推荐设置只修改本地模型的压缩预算和默认选择，不修改其他提供商、全局思考等级、工具、主题或包列表。
 如果用户明确关闭了全局自动压缩，扩展尊重这一选择。
@@ -175,11 +181,11 @@ pi remove git:github.com/Lxxyx/pi-strata-provder@v0.1.1
 pi install npm:pi-strata-provider
 ```
 
-正确包名是 `pi-strata-provider`。提供商标识仍为 `local`，自动模型仍为 `local/strata-auto`，可选配置文件仍为 `strata-provider.json`。
+正确包名是 `pi-strata-provider`。本分支的提供商标识默认为 `strata`，自动模型仍为 `strata/strata-auto`，可选配置文件仍为 `strata-provider.json`。
 
 ## 从手写模型配置迁移
 
-备份 `models.json` 后，移除旧的 `providers.local` 配置块。
+备份 `models.json` 后，移除旧的 `providers.strata` 配置块。
 pi 会将手写配置覆盖到原生提供商上；旧配置可能把自动刷新的上下文和思考控制方式重新覆盖成过期值。
 
 安装时不会擅自删除用户配置。

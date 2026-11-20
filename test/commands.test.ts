@@ -10,7 +10,7 @@ async function harness(fn: (state: any) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), "strata-command-test-"));
   const before = { agent: process.env.PI_CODING_AGENT_DIR, config: process.env.PI_STRATA_CONFIG, base: process.env.PI_STRATA_BASE_URL };
   process.env.PI_CODING_AGENT_DIR = dir; delete process.env.PI_STRATA_CONFIG; delete process.env.PI_STRATA_BASE_URL;
-  await writeFile(join(dir, "strata-provider.json"), JSON.stringify({ apiKey: "do-not-display-this-secret" }));
+  await writeFile(join(dir, "strata-provider.json"), JSON.stringify({ provider: "local", apiKey: "do-not-display-this-secret" }));
   const state: any = { dir, notices: [], handlers: {}, reloads: 0, selected: "Status", input: "http://localhost:8081" };
   const api: any = {
     registerProvider: (provider: any) => { state.provider = provider; },

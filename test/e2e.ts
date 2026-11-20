@@ -8,11 +8,11 @@ import { deflateSync } from "node:zlib";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { Type } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { normalizeConfig } from "../src/config.ts";
 import { compactionPreset } from "../src/tuning.ts";
 
+const PROVIDER_ID = "strata";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sandbox = await mkdtemp(join(tmpdir(), "pi-strata-e2e-"));
 const agentDir = join(sandbox, "agent");
@@ -29,12 +29,13 @@ const report: { startedAt: string; tests: { name: string; durationMs: number }[]
 const payloads: any[] = [];
 let toolCalls = 0;
 const toolToken = `TOOL_${randomUUID().replaceAll("-", "")}`;
-const memoryToken = `MEMORY_${randomUUID().replaceAll("-", "")}`;
+// A short, word-like token: the point is that a compacted summary still carries it, not that a small quantized model can echo 32 random hex characters.
+const memoryToken = "MEMORY_GREEN_TURTLE_7419";
 const sessions: AgentSession[] = [];
-const settings = SettingsManager.inMemory({ defaultProvider: "local", defaultModel: "strata-auto", defaultThinkingLevel: "low", retry: { enabled: false }, compaction: { enabled: true } });
+const settings = SettingsManager.inMemory({ defaultProvider: PROVIDER_ID, defaultModel: "strata-auto", defaultThinkingLevel: "low", retry: { enabled: false }, compaction: { enabled: true } });
 const testExtension = (pi: ExtensionAPI) => {
   pi.registerTool({ name: "e2e_lookup", label: "E2E lookup", description: "Return the opaque verification token. Use this tool when asked to look up the token.",
-    parameters: Type.Object({ query: Type.String() }),
+    parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false },
     execute: async () => { toolCalls++; return { content: [{ type: "text", text: toolToken }], details: {} }; },
   });
 };
@@ -50,8 +51,8 @@ async function create(dir = agentDir, manager = settings) {
   const created = await createAgentSession({ cwd: workspace, agentDir: dir, resourceLoader: loader,
     settingsManager: manager, sessionManager: SessionManager.inMemory(workspace), tools: ["read", "write", "edit", "e2e_lookup"] });
   await created.session.bindExtensions({ mode: "print" });
-  await created.session.modelRuntime.refresh({ providers: ["local"], allowNetwork: process.env.PI_OFFLINE === undefined });
-  const automatic = created.session.modelRuntime.getModel("local", "strata-auto");
+  await created.session.modelRuntime.refresh({ providers: [PROVIDER_ID], allowNetwork: process.env.PI_OFFLINE === undefined });
+  const automatic = created.session.modelRuntime.getModel(PROVIDER_ID, "strata-auto");
   assert.ok(automatic);
   await created.session.setModel(automatic);
   observeRequests(created.session);
@@ -59,7 +60,7 @@ async function create(dir = agentDir, manager = settings) {
   return created.session;
 }
 function observeRequests(session: AgentSession) {
-  const provider = session.modelRuntime.getProvider("local")!;
+  const provider = session.modelRuntime.getProvider(PROVIDER_ID)!;
   const original = provider.streamSimple.bind(provider);
   provider.streamSimple = (model, context, options) => original(model, context, {
     ...options,
@@ -103,19 +104,22 @@ try {
   const session = await create();
   let physical: any;
   await step("startup discovery and stable automatic model", async () => {
-    const result = await session.modelRuntime.refresh({ providers: ["local"], force: true, allowNetwork: true });
+    const result = await session.modelRuntime.refresh({ providers: [PROVIDER_ID], force: true, allowNetwork: true });
     assert.equal(result.errors.size, 0, [...result.errors.values()].map(error => error.message).join("; "));
-    const models = session.modelRuntime.getModels().filter(model => model.provider === "local" && model.id !== "strata-auto");
+    const models = session.modelRuntime.getModels().filter(model => model.provider === PROVIDER_ID && model.id !== "strata-auto");
     assert.ok(models.length > 0);
     physical = models[0];
     assert.equal(session.model?.id, "strata-auto");
     assert.equal(physical.compat.supportsReasoningEffort, true);
     assert.equal(physical.compat.supportsDeveloperRole, false);
-    const health = await (await fetch(endpoint.replace(/\/v1$/, "") + "/health")).json();
-    assert.equal(physical.contextWindow, health.max_context);
+    // The 0.1.63 gateway answers /health with its web UI; /v1/models is the contract that carries the window.
+    const catalog = await (await fetch(`${endpoint}/models`, { headers: { Authorization: `Bearer ${process.env.STRATA_API_KEY ?? "strata-local"}` } })).json();
+    const listed = (catalog.data ?? []).find((entry: any) => entry.id === physical.id);
+    assert.ok(listed, `the gateway must list ${physical.id}`);
+    assert.equal(physical.contextWindow, listed.context_length ?? listed.meta?.n_ctx);
     report.model = physical.id; report.contextWindow = physical.contextWindow;
     observeRequests(session);
-    settings.applyOverrides({ compaction: { modelOverrides: { "local/strata-auto": compactionPreset(physical) } } });
+    settings.applyOverrides({ compaction: { modelOverrides: { [`${PROVIDER_ID}/strata-auto`]: compactionPreset(physical) } } });
   });
 
   await step("streamed text, token usage and thinking disabled", async () => {
@@ -162,7 +166,7 @@ try {
   });
 
   await step("manual compaction and memory-preserving follow-up", async () => {
-    settings.applyOverrides({ compaction: { modelOverrides: { "local/strata-auto": { reserveTokens: 32768, keepRecentTokens: 256 } } } });
+    settings.applyOverrides({ compaction: { modelOverrides: { [`${PROVIDER_ID}/strata-auto`]: { reserveTokens: 32768, keepRecentTokens: 256 } } } });
     const summary = await session.compact("Preserve the exact remembered verification code and the final contents of note.txt.");
     assert.ok(summary.summary.includes(memoryToken));
     assert.equal(payloads.at(-1).reasoning_effort, "low", "Auto routing must use fast reasoning for summaries.");
@@ -173,12 +177,12 @@ try {
 
   await step("automatic threshold compaction using a real generated summary", async () => {
     const threshold = 4096;
-    settings.applyOverrides({ compaction: { modelOverrides: { "local/strata-auto": { reserveTokens: physical.contextWindow - threshold, keepRecentTokens: 128 } } } });
+    settings.applyOverrides({ compaction: { modelOverrides: { [`${PROVIDER_ID}/strata-auto`]: { reserveTokens: physical.contextWindow - threshold, keepRecentTokens: 128 } } } });
     const before = session.sessionManager.getBranch().filter(entry => entry.type === "compaction").length;
     await session.prompt("The following is irrelevant padding for a threshold test: " + "irrelevant background ".repeat(2500) + "\nRetain my verification code. Reply only AUTO_OK.");
     assert.ok(session.sessionManager.getBranch().filter(entry => entry.type === "compaction").length > before);
     assert.match(session.getLastAssistantText() ?? "", /AUTO_OK/);
-    settings.applyOverrides({ compaction: { modelOverrides: { "local/strata-auto": compactionPreset(physical) } } });
+    settings.applyOverrides({ compaction: { modelOverrides: { [`${PROVIDER_ID}/strata-auto`]: compactionPreset(physical) } } });
   });
 
   await step("abort and subsequent successful inference", async () => {
@@ -202,7 +206,7 @@ try {
     process.env.PI_OFFLINE = "1";
     try {
       const restored = await create();
-      assert.ok(restored.modelRuntime.getModel("local", physical.id));
+      assert.ok(restored.modelRuntime.getModel(PROVIDER_ID, physical.id));
       await restored.prompt("Reply only OFFLINE_CATALOG_OK.");
       assert.match(restored.getLastAssistantText() ?? "", /OFFLINE_CATALOG_OK/);
     } finally { if (previousOffline === undefined) delete process.env.PI_OFFLINE; else process.env.PI_OFFLINE = previousOffline; }
@@ -220,7 +224,7 @@ try {
         const upstream = await fetch(endpoint.replace(/\/v1$/, "") + path, { method: req.method,
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.STRATA_API_KEY ?? "strata-local"}` },
           ...(req.method !== "GET" && { body: Buffer.concat(chunks) }) });
-        if (path.startsWith("/health")) { const health = await upstream.json(); res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ...health, api_key: true })); return; }
+        if (path.startsWith("/health")) { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: true, api_key: true })); return; }
         res.writeHead(upstream.status, { "Content-Type": upstream.headers.get("content-type") ?? "application/json" });
         if (upstream.body) for await (const bytes of upstream.body) res.write(Buffer.from(bytes));
         res.end();
@@ -231,26 +235,26 @@ try {
     const protectedDir = join(sandbox, "protected-agent"); await mkdir(protectedDir);
     await writeFile(join(protectedDir, "strata-provider.json"), JSON.stringify({ baseUrl: `http://127.0.0.1:${address.port}/v1` }));
     const failed = await create(protectedDir);
-    const failure = await failed.modelRuntime.refresh({ providers: ["local"], force: true, allowNetwork: true });
-    assert.match(failure.errors.get("local")?.message ?? "", /401.*STRATA_API_KEY/);
-    assert.ok(!failure.errors.get("local")?.message.includes(requiredKey));
-    await writeFile(join(protectedDir, "auth.json"), JSON.stringify({ local: { type: "api_key", key: requiredKey } }));
+    const failure = await failed.modelRuntime.refresh({ providers: [PROVIDER_ID], force: true, allowNetwork: true });
+    assert.match(failure.errors.get(PROVIDER_ID)?.message ?? "", /401.*STRATA_API_KEY/);
+    assert.ok(!failure.errors.get(PROVIDER_ID)?.message.includes(requiredKey));
+    await writeFile(join(protectedDir, "auth.json"), JSON.stringify({ [PROVIDER_ID]: { type: "api_key", key: requiredKey } }));
     const recovered = await create(protectedDir);
-    const refreshed = await recovered.modelRuntime.refresh({ providers: ["local"], force: true, allowNetwork: true });
+    const refreshed = await recovered.modelRuntime.refresh({ providers: [PROVIDER_ID], force: true, allowNetwork: true });
     assert.equal(refreshed.errors.size, 0);
     recovered.setThinkingLevel("off");
     await recovered.prompt("Reply only AUTH_RECOVERED.");
     assert.match(recovered.getLastAssistantText() ?? "", /AUTH_RECOVERED/);
     requiredKey = "rotated-e2e-key";
-    const failedRefresh = await recovered.modelRuntime.refresh({ providers: ["local"], allowNetwork: true, force: true });
-    assert.match(failedRefresh.errors.get("local")?.message ?? "", /401/);
-    assert.ok(recovered.modelRuntime.getModel("local", physical.id), "A failed refresh must retain the cached catalog.");
+    const failedRefresh = await recovered.modelRuntime.refresh({ providers: [PROVIDER_ID], allowNetwork: true, force: true });
+    assert.match(failedRefresh.errors.get(PROVIDER_ID)?.message ?? "", /401/);
+    assert.ok(recovered.modelRuntime.getModel(PROVIDER_ID, physical.id), "A failed refresh must retain the cached catalog.");
     await recovered.prompt("Reply only SHOULD_NOT_SUCCEED.");
     const failedMessage = [...recovered.messages].reverse().find(message => message.role === "assistant");
     assert.ok(failedMessage && failedMessage.role === "assistant" && failedMessage.stopReason === "error");
     assert.match(failedMessage.errorMessage ?? "", /\/login.*STRATA_API_KEY/);
     requiredKey = "e2e-only-key";
-    await recovered.modelRuntime.refresh({ providers: ["local"], allowNetwork: true, force: true });
+    await recovered.modelRuntime.refresh({ providers: [PROVIDER_ID], allowNetwork: true, force: true });
     await recovered.prompt("Reply only KEY_FIXED.");
     assert.match(recovered.getLastAssistantText() ?? "", /KEY_FIXED/);
     process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -260,13 +264,13 @@ try {
     const packageRoot = resolve(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..");
     const pkg = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
     const cli = join(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
-    const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--model", "local/strata-auto", "--thinking", "off", "--no-tools", "--mode", "json", "-p", "Reply only CLI_E2E_OK."],
+    const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--model", `${PROVIDER_ID}/strata-auto`, "--thinking", "off", "--no-tools", "--mode", "json", "-p", "Reply only CLI_E2E_OK."],
       { cwd: workspace, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir }, timeout: 120000 });
     task.child.stdin?.end();
     const { stdout, stderr } = await task;
     const events = stdout.trim().split("\n").map(line => JSON.parse(line));
     const response = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").at(-1)?.message;
-    assert.equal(response?.provider, "local");
+    assert.equal(response?.provider, PROVIDER_ID);
     assert.equal(response?.model, physical.id);
     assert.equal(response?.stopReason, "stop");
     assert.match(stdout, /CLI_E2E_OK/);
@@ -279,14 +283,14 @@ try {
     const cli = join(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
     const coldDir = join(sandbox, "cold-cli-agent"); await mkdir(coldDir);
     await writeFile(join(coldDir, "strata-provider.json"), JSON.stringify({ baseUrl: endpoint }));
-    await writeFile(join(coldDir, "settings.json"), JSON.stringify({ defaultProvider: "local", defaultModel: "strata-auto", defaultThinkingLevel: "off" }));
+    await writeFile(join(coldDir, "settings.json"), JSON.stringify({ defaultProvider: PROVIDER_ID, defaultModel: "strata-auto", defaultThinkingLevel: "off" }));
     const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--no-tools", "--mode", "json", "-p", "Reply only COLD_START_OK."],
       { cwd: workspace, env: { ...process.env, PI_CODING_AGENT_DIR: coldDir }, timeout: 120000 });
     task.child.stdin?.end();
     const { stdout } = await task;
     const events = stdout.trim().split("\n").map(line => JSON.parse(line));
     const response = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").at(-1)?.message;
-    assert.equal(response?.provider, "local", "The CLI must not silently fall back to a cloud provider.");
+    assert.equal(response?.provider, PROVIDER_ID, "The CLI must not silently fall back to a cloud provider.");
     assert.equal(response?.model, physical.id);
     assert.equal(response?.stopReason, "stop");
     assert.match(stdout, /COLD_START_OK/);
@@ -296,14 +300,14 @@ try {
     const pkg = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
     const cli = join(packageRoot, typeof pkg.bin === "string" ? pkg.bin : pkg.bin.pi);
     const coldDir = join(sandbox, "unavailable-cli-agent"); await mkdir(coldDir);
-    await writeFile(join(coldDir, "settings.json"), JSON.stringify({ defaultProvider: "local", defaultModel: "strata-auto", defaultThinkingLevel: "off" }));
+    await writeFile(join(coldDir, "settings.json"), JSON.stringify({ defaultProvider: PROVIDER_ID, defaultModel: "strata-auto", defaultThinkingLevel: "off" }));
     const task = promisify(execFile)(process.execPath, [cli, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session", "-e", root, "--no-tools", "--mode", "json", "-p", "This local-only request must fail if the local server is unavailable."],
       { cwd: workspace, env: { ...process.env, PI_CODING_AGENT_DIR: coldDir, PI_STRATA_BASE_URL: "http://127.0.0.1:1/v1" }, timeout: 120000 });
     task.child.stdin?.end();
     const output = await task.catch(error => ({ stdout: String(error.stdout ?? ""), stderr: String(error.stderr ?? "") }));
     const events = output.stdout.trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
     const response = events.filter(event => event.type === "message_end" && event.message?.role === "assistant").at(-1)?.message;
-    assert.equal(response?.provider, "local", "An unavailable local server must not cause cloud inference.");
+    assert.equal(response?.provider, PROVIDER_ID, "An unavailable local server must not cause cloud inference.");
     assert.equal(response?.stopReason, "error");
     assert.match(response?.errorMessage ?? "", /Strata|server|connect|ECONNREFUSED/i);
   });

@@ -46,12 +46,13 @@ test("discovers actual Strata runtime limits, vision and normalized effort", asy
   const result = await discover(strata(), { fetcher: routes() });
   const model = result.models[0];
   assert.equal(model.contextWindow, 131072);
-  assert.equal(model.maxTokens, 16384);
+  assert.equal(model.maxTokens, 32768, "Strata fits an oversized answer to the room left in the context");
   assert.deepEqual(model.input, ["text", "image"]);
   assert.equal(model.compat?.supportsReasoningEffort, true);
   assert.equal(model.compat?.thinkingFormat, "openai");
   assert.equal(model.compat?.supportsDeveloperRole, false);
-  assert.deepEqual(model.thinkingLevelMap, { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: null, max: null });
+  // Strata 0.1.63 answers `xhigh` and `max` too (both normalize to the template's xhigh).
+  assert.deepEqual(model.thinkingLevelMap, { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" });
   assert.equal(result.authenticationRequired, false);
 });
 
@@ -136,7 +137,7 @@ test("refreshes server sampling defaults with API field names", async () => {
 test("unlimited server output removes a previously cached fixed cap", async () => {
   const previous = { ...await fixtureModel(), maxTokens: 512 };
   const model = (await discover(strata(), { previous: [previous], fetcher: routes() })).models[0];
-  assert.equal(model.maxTokens, 16384);
+  assert.equal(model.maxTokens, 32768);
 });
 
 test("model overrides merge compatibility and sampling without replacing server metadata", async () => {
