@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { normalizeConfig } from "../src/config.ts";
+import { loadConfig, normalizeConfig } from "../src/config.ts";
 import { discover, type Fetcher, type JsonObject } from "../src/discovery.ts";
 import { chatTemplateFromArgs, engineInstances, hostEndpoints, strataStateDirectories } from "../src/native.ts";
 
@@ -180,9 +180,25 @@ test("finds the chat template shipped with the model pack", async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("registers under the Strata provider id so an existing Strata selection keeps working", () => {
-  assert.equal(normalizeConfig({}).provider, "strata");
-  assert.equal(normalizeConfig({ provider: "local" }).provider, "local");
+test("the provider id stays `local` by default and can be set to an id an existing setup already uses", async () => {
+  assert.equal(normalizeConfig({}).provider, "local");
+  assert.equal(normalizeConfig({ provider: "strata" }).provider, "strata");
+
+  // The environment decides the id for every reader (CLI runtime key, session defaults, stored catalog), so it wins over the file.
+  const dir = await mkdtemp(join(tmpdir(), "strata-provider-id-"));
+  const file = join(dir, "strata-provider.json");
+  await writeFile(file, JSON.stringify({ baseUrl: "http://127.0.0.1:8080/v1", provider: "local" }));
+  process.env.PI_STRATA_CONFIG = file;
+  process.env.PI_STRATA_PROVIDER = "strata-local";
+  try {
+    const config = await loadConfig();
+    assert.equal(config.provider, "strata-local");
+    assert.equal(config.baseUrl, "http://127.0.0.1:8080/v1");
+  } finally {
+    delete process.env.PI_STRATA_CONFIG;
+    delete process.env.PI_STRATA_PROVIDER;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("local state directories honor STRATA_HOME and stay bounded", () => {

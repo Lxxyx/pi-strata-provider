@@ -12,7 +12,7 @@ import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsMana
 import { normalizeConfig } from "../src/config.ts";
 import { compactionPreset } from "../src/tuning.ts";
 
-const PROVIDER_ID = "strata";
+const PROVIDER_ID = "local";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sandbox = await mkdtemp(join(tmpdir(), "pi-strata-e2e-"));
 const agentDir = join(sandbox, "agent");

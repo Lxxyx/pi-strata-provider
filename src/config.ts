@@ -24,7 +24,7 @@ export interface Config {
 }
 
 export const DEFAULT_CONFIG: Config = {
-  provider: "strata",
+  provider: "local",
   baseUrl: "http://127.0.0.1:8080/v1",
   backend: "strata",
   apiKeyEnv: "STRATA_API_KEY",
