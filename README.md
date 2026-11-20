@@ -9,18 +9,26 @@ Discover local models automatically instead of maintaining a handwritten provide
 >
 > [npm package](https://www.npmjs.com/package/pi-strata-provider) · [GitHub releases](https://github.com/Lxxyx/pi-strata-provider/releases)
 
-## This fork: works with Strata 0.1.63 on Windows
+## Strata 0.1.63: the gateway answers `/v1/*` only
 
-Upstream 1.0.0 discovered the model catalog through `/props`, `/health` and `/api/models`. A 0.1.63 install answers those on the **engine** face, not on the gateway the provider talks to: the gateway serves `/v1/*` and returns 404 for `/props`, `/health` and `/models` (its HTML app swallows some of them), and it exposes no `max_generated`, so the catalog came back with the wrong window or not at all.
+`/props`, `/health` and `/api/models` are served by Strata's **engine**, not by the gateway the provider talks to. A 0.1.63 gateway serves `/v1/*`, returns 404 for `/props`, `/health` and `/models` (its HTML app swallows some of those paths) and publishes no `max_generated`, so discovery either found no catalog at all or took the wrong context window. Verified against a running install:
 
-This fork measures the running install instead of guessing its shape:
+```text
+gateway  GET /props, /health, /models   -> 404 {"error":"No route for GET /props"}  (or HTML)
+gateway  GET /v1/models                 -> 200  context_length=131072, meta.n_ctx=131072,
+                                            architecture.input_modalities=[text, image]
+engine   GET /props?model=<id>          -> 200  chat template, generation defaults, template efforts
+```
 
-- the catalog is read from the gateway's `/v1/models` (`context_length`, `meta.n_ctx`, `architecture.input_modalities`) and only falls back to the engine's `/props` for what the gateway does not report;
-- endpoints, ports and API keys are read from Strata's own state on disk (`AppData/Local/Strata/launch/*.json`, `~/.strata/data/native-instances/*.json`), so a protected gateway authenticates without a handwritten key;
-- the provider ID defaults to **`strata`** (see below), so an existing Strata selection in Pi keeps working;
-- thinking budgets are per level (`reasoning_budget_tokens`) and bounded by half the output ceiling, so a long plan cannot outbid the answer, and compaction reserves output ceiling **plus** thinking.
+Discovery now reads the running install instead of assuming its shape:
 
-The measurements behind these changes are in [FORK-PLAN.md](FORK-PLAN.md). `npm run check` covers them in unit tests; `npm run test:e2e` runs 14 live scenarios against a running Strata.
+- the catalog comes from the gateway's `/v1/models` (`context_length`, `meta.n_ctx`, `architecture.input_modalities`), and the engine's `/props` is queried only for what the gateway does not publish;
+- when neither side says whether a model thinks, the provider asks that model once (a tiny `Please think` request) instead of assuming `false`, which is what silently disabled reasoning on a reasoning-capable model;
+- endpoints, dynamic engine ports, API keys, pack templates and the gateway key are read from Strata's own state on disk (`AppData/Local/Strata/launch/*.json`, `~/.strata/data/native-instances/*.json`), so a protected gateway authenticates without a handwritten key;
+- thinking budgets are per level (`reasoning_budget_tokens`, bounded by half the output ceiling, with an explicit `0` for **off** to switch off a budget the server was told to apply), so a long plan cannot outbid the answer; compaction reserves the output ceiling **plus** thinking;
+- `defaultMaxTokens` rises to 32768: Strata clamps an oversized answer to the room left in the context.
+
+New options: `readLocalState` / `PI_STRATA_LOCAL_STATE` and `capabilityProbe` / `PI_STRATA_CAPABILITY_PROBE` turn the two new discovery sources off; `provider` / `PI_STRATA_PROVIDER` selects the provider ID.
 
 ## Quick start
 
@@ -33,10 +41,10 @@ The measurements behind these changes are in [FORK-PLAN.md](FORK-PLAN.md). `npm 
    This selects **Strata Auto (tuned)** and applies local-model compaction presets.
 4. Use Pi normally. Model metadata refreshes at startup, on opening `/model`, and through `pi update --models`.
 
-Startup discovery completes before initial model selection, including a first-ever CLI run with no cache. `--offline` / `PI_OFFLINE=1` restore the catalog without discovery network access. A fresh `strata/strata-auto` default stays local when the server is unavailable; it reports a local error instead of silently using a logged-in cloud model. Explicit model choices and resumed conversations are preserved.
+Startup discovery completes before initial model selection, including a first-ever CLI run with no cache. `--offline` / `PI_OFFLINE=1` restore the catalog without discovery network access. A fresh `local/strata-auto` default stays local when the server is unavailable; it reports a local error instead of silently using a logged-in cloud model. Explicit model choices and resumed conversations are preserved.
 
 A keyless local server works without configuration: the extension supplies `strata-local` as a placeholder.
-For a protected server, run `/login` and choose **Strata**, or use `/login strata`.
+For a protected server, run `/login` and choose **Strata**, or use `/login local`.
 
 You can also install the pinned GitHub release:
 
@@ -63,11 +71,11 @@ Verified with Pi 1.0.4, Strata 0.1.39, and a live Swift Qwen3.8 model with visio
 - Keeps model catalogs in Pi's own `models-store.json` for offline startup.
 - Retains the last successful catalog on authentication errors, network failures or malformed responses.
 - Accepts successful empty catalogs, so removed models do not remain forever.
-- Adds a stable `strata/strata-auto` virtual model, so changing the physical model ID does not require changing the default model.
+- Adds a stable `local/strata-auto` virtual model, so changing the physical model ID does not require changing the default model.
 - Preserves native Pi streaming, tools, images, usage accounting, cancellation, retries and compaction.
 - Never downloads GGUF weights, changes Strata's run configuration, or starts/stops the server.
 
-The default provider ID is **`strata`**, not the package name and not upstream's `local`: this fork keeps the ID that Pi sessions and handwritten `models.json` entries of a Strata setup already use, so switching to it does not rewrite model selections or conversation history. Set `provider` in `strata-provider.json` (or `PI_STRATA_PROVIDER`) for a different ID; the native login target follows it.
+The default provider ID is **`local`**, as before. Set `provider` in `strata-provider.json` (or `PI_STRATA_PROVIDER`) to keep an ID that Pi sessions and handwritten `models.json` entries already use - `"provider": "strata"` for example - and the native login target, the stored catalog and the automatic model follow it.
 
 ## One command menu, native authentication
 
@@ -79,15 +87,15 @@ The default provider ID is **`strata`**, not the package name and not upstream's
 | `/strata url` | Save a server URL, then reload the extension |
 | `/strata setup` | Apply the recommended local Pi setup, then reload |
 | `/strata key` | Show API key guidance without displaying credentials |
-| `/login strata` | Store the Strata key using Pi's native authentication flow |
+| `/login local` | Store the Strata key using Pi's native authentication flow |
 
 The URL menu accepts a server root or a URL ending in `/v1`. Reverse-proxy prefixes are supported.
 You do **not** need a separate custom command to manage keys. Pi already owns authentication.
 
 **Recommended setup changes**:
-- Startup selection becomes `strata/strata-auto`.
+- Startup selection becomes `local/strata-auto`.
 - The automatic model gets a `low` startup thinking level if it has no existing override.
-- Compaction token presets are written for discovered local models and `strata/strata-auto`.
+- Compaction token presets are written for discovered local models and `local/strata-auto`.
 - Other providers' presets, global thinking level, tools, theme and package list are left unchanged.
 - Explicitly disabled global compaction is respected, not silently re-enabled.
 
@@ -110,7 +118,7 @@ Client-side key precedence:
 3. optional literal `apiKey` in the extension configuration;
 4. the `strata-local` placeholder.
 
-Prefer `/login strata` or an environment variable. A literal key is supported for compatibility but is not recommended.
+Prefer `/login local` or an environment variable. A literal key is supported for compatibility but is not recommended.
 
 Example for Git Bash:
 ```sh
@@ -263,16 +271,16 @@ pi remove git:github.com/Lxxyx/pi-strata-provder@v0.1.1
 pi install npm:pi-strata-provider
 ```
 
-The provider ID remains `local`, the automatic model remains `strata/strata-auto`, and the optional configuration remains `strata-provider.json`.
+The provider ID defaults to `local` and the automatic model to `local/strata-auto`; both follow the configured provider ID. The optional configuration file remains `strata-provider.json`.
 The correctly spelled npm package is `pi-strata-provider`.
 
 ## Migrating a handwritten local provider
 
-Remove the old `providers.strata` block from `models.json` after backing it up.
+Remove the old `providers.local` block from `models.json` after backing it up.
 Pi applies `models.json` above native providers: a stale hand-written block can override refreshed context, compatibility and authentication settings.
 
 The extension intentionally does not delete user configuration on installation.
-Run the recommended setup once, or select `strata/strata-auto` and save it as the default with `Ctrl+S`.
+Run the recommended setup once, or select `local/strata-auto` and save it as the default with `Ctrl+S`.
 
 No prompts, histories, keys, server model paths or full chat templates are included in persisted model metadata.
 
